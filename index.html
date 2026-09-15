@@ -7,7 +7,7 @@
   <meta name="description" content="未来を知らない状態で投資判断を体験する、高校生向け投資シミュレーター。">
   <title>MARKET LAB — 投資シミュレーター</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b63e8'/%3E%3Cpath d='M14 43V28M24 38V17M34 48V31M44 34V21M54 44V25' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=0.2">
+  <link rel="stylesheet" href="styles.css?v=0.3">
 </head>
 <body>
   <main id="app">
@@ -22,19 +22,17 @@
 
       <div class="start-grid">
         <section class="mission-card">
-          <p class="eyebrow">INVESTMENT SIMULATOR / RANDOM MARKET</p>
+          <p class="eyebrow">INVESTMENT SIMULATOR / 4 MARKET CASES</p>
           <h1>未来を知らずに、<br><span>5分間の投資判断。</span></h1>
           <p class="lead">1,000万円を元手に、変化する市場で株式を売買します。終了時の総資産と、そこに至るまでのリスクを比べてみましょう。</p>
 
-          <div class="start-settings" aria-label="ゲーム設定">
-            <div class="setting-item">
-              <span>MODE</span>
-              <strong>RANDOM MARKET</strong>
-            </div>
-            <div class="setting-item seed-setting">
-              <label for="seed-input">共通SEED</label>
-              <input id="seed-input" type="text" value="CLASS-A" maxlength="24" autocomplete="off" spellcheck="false" aria-describedby="seed-note">
-              <small id="seed-note">同じSEEDなら全員が同じ相場になります</small>
+          <div class="scenario-select" aria-labelledby="scenario-heading">
+            <div class="scenario-heading"><span id="scenario-heading">相場を選択</span><small>同じCASEなら全員が同じ値動きになります</small></div>
+            <div class="scenario-grid" role="radiogroup" aria-label="相場シナリオ">
+              <button class="scenario-card active" data-scenario="A" role="radio" aria-checked="true"><span class="case-badge">CASE A</span><strong>成長と調整</strong><small>基本的な相場</small></button>
+              <button class="scenario-card" data-scenario="B" role="radio" aria-checked="false"><span class="case-badge">CASE B</span><strong>乱高下</strong><small>変動が大きい相場</small></button>
+              <button class="scenario-card" data-scenario="C" role="radio" aria-checked="false"><span class="case-badge">CASE C</span><strong>静かな転換</strong><small>判断を迷わせる相場</small></button>
+              <button class="scenario-card historical" data-scenario="LEHMAN" role="radio" aria-checked="false"><span class="case-badge">HISTORICAL</span><strong>リーマン・ショック</strong><small>2008年秋を追体験</small></button>
             </div>
           </div>
 
@@ -70,7 +68,7 @@
     <section id="game-screen" class="screen game-screen hidden" aria-label="取引画面">
       <header class="game-header">
         <div class="brand compact"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>MARKET LAB</span></div>
-        <div class="market-id"><span class="status-dot"></span><span>RANDOM MARKET</span><b id="seed-display">CLASS-A</b></div>
+        <div class="market-id"><span class="status-dot"></span><span id="scenario-label">成長と調整</span><b id="seed-display">CASE A</b></div>
         <div class="timer-wrap" aria-live="polite"><span>TIME LEFT</span><strong id="timer">05:00</strong></div>
         <button id="help-button" class="circle-button" aria-label="ヘルプを開く">?</button>
       </header>
@@ -92,6 +90,7 @@
           <div class="canvas-wrap">
             <canvas id="chart" aria-label="リアルタイムローソク足チャート"></canvas>
             <div id="paused-label" class="paused-label hidden">PAUSED</div>
+            <div id="market-warning" class="market-warning hidden" role="status" aria-live="assertive"><span aria-hidden="true">!</span><div><strong>MARKET ALERT</strong><small>急激な価格下落を検知</small></div></div>
           </div>
           <div class="chart-footer"><span>1 CANDLE = 5 SEC</span><span id="candle-count">0 / 60</span></div>
         </section>
@@ -100,6 +99,7 @@
           <section class="asset-summary">
             <div class="summary-top"><span>総資産</span><span id="total-return" class="positive">+0.00%</span></div>
             <strong id="total-assets">¥10,000,000</strong>
+            <div id="capital-status" class="capital-status even"><span aria-hidden="true">●</span><strong>元本と同額です</strong><small>基準 ¥10,000,000</small></div>
             <div class="asset-bars" aria-hidden="true"><i id="cash-bar"></i><i id="stock-bar"></i></div>
             <div class="asset-breakdown">
               <div><span>現金</span><b id="cash">¥10,000,000</b></div>
@@ -143,7 +143,7 @@
     <section id="result-screen" class="screen result-screen hidden">
       <header class="topbar result-topbar">
         <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>MARKET LAB</span></div>
-        <span class="result-seed">SEED <b id="result-seed">CLASS-A</b></span>
+        <span class="result-seed">SCENARIO <b id="result-seed">CASE A</b></span>
       </header>
       <div class="result-grid">
         <section class="result-hero">
@@ -152,9 +152,10 @@
           <div class="final-return positive" id="final-return">+0.00%</div>
           <div class="final-assets"><span>最終資産</span><strong id="final-assets">¥10,000,000</strong></div>
           <p id="style-comment" class="style-comment">今回の売買行動を分析しています。</p>
+          <p id="result-case-note" class="result-case-note"></p>
           <div class="result-actions">
-            <button id="replay-button" class="primary-button"><span>同じSEEDでもう一度</span><span>↻</span></button>
-            <button id="new-seed-button" class="ghost-button">新しい相場へ</button>
+            <button id="replay-button" class="primary-button"><span>同じシナリオでもう一度</span><span>↻</span></button>
+            <button id="new-seed-button" class="ghost-button">別のシナリオを選ぶ</button>
           </div>
         </section>
         <section class="result-data">
@@ -179,7 +180,7 @@
   <dialog id="guide-dialog" class="guide-dialog">
     <div class="dialog-head"><div><span class="eyebrow">QUICK GUIDE</span><h2>遊び方とローソク足</h2></div><button class="circle-button" data-close-guide="true" aria-label="閉じる">×</button></div>
     <div class="guide-grid">
-      <article><span class="guide-icon">01</span><h3>資産を増やす</h3><p>5分間、現在価格で株を売買します。終了時には保有株もその時点の価格で評価されます。</p></article>
+      <article><span class="guide-icon">01</span><h3>相場を選ぶ</h3><p>CASE A～Cと、2008年秋のリーマン・ショックを参考にしたHISTORICALから選べます。同じCASEは同じ値動きです。</p></article>
       <article><span class="guide-icon">02</span><h3>数量を選ぶ</h3><p>100・500・1,000株、または買える最大数を選びます。「最大」は100株単位です。</p></article>
       <article><span class="guide-icon">03</span><h3>リスクも見る</h3><p>総資産が最高値からどれだけ下がったかを「最大ドローダウン」として結果に表示します。</p></article>
     </div>
@@ -194,6 +195,6 @@
     <button class="primary-button dialog-close-wide" data-close-guide="true"><span>理解して戻る</span><span>✓</span></button>
   </dialog>
 
-  <script src="app.js?v=0.2"></script>
+  <script src="app.js?v=0.3"></script>
 </body>
 </html>

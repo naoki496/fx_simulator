@@ -8,37 +8,76 @@
   const TICK_MS = 250;
   const TICKS_PER_CANDLE = 20;
   const TOTAL_CANDLES = 60;
+  const SCENARIOS = {
+    A: {
+      id: 'A', seed: 'CLASS-A', label: '成長と調整', badge: 'CASE A',
+      note: '緩やかな成長と一時的な調整が交互に現れる、基本的な相場です。',
+      regimes: [
+        ['上昇', .0038, .0030, 11], ['横ばい', .0004, .0023, 8], ['調整', -.0032, .0038, 8],
+        ['反発', .0045, .0040, 11], ['過熱', .0026, .0050, 9], ['調整', -.0024, .0035, 6], ['安定', .0015, .0024, 7]
+      ]
+    },
+    B: {
+      id: 'B', seed: 'CLASS-B', label: '乱高下', badge: 'CASE B',
+      note: '上昇と下落が短い間隔で入れ替わる、値動きの大きな相場です。',
+      regimes: [
+        ['急騰', .0045, .0100, 7], ['急落', -.0065, .0120, 7], ['反発', .0060, .0110, 8],
+        ['混乱', -.0010, .0140, 10], ['上昇', .0040, .0080, 8], ['下落', -.0050, .0100, 8], ['回復', .0030, .0070, 12]
+      ]
+    },
+    C: {
+      id: 'C', seed: 'CLASS-C', label: '静かな転換', badge: 'CASE C',
+      note: '小さな値動きが続いた後、市場の方向が徐々に変わる相場です。',
+      regimes: [
+        ['横ばい', .0001, .0018, 13], ['小幅上昇', .0015, .0022, 10], ['停滞', -.0002, .0017, 9],
+        ['転換', -.0028, .0030, 10], ['下落', -.0036, .0043, 10], ['反発', .0038, .0045, 8]
+      ]
+    },
+    LEHMAN: {
+      id: 'LEHMAN', seed: 'HISTORICAL-2008', label: 'リーマン・ショック', badge: 'HISTORICAL', historical: true,
+      note: '2008年9月のリーマン・ブラザーズ破綻後、市場の混乱が深まった時期を参考に、急落と短い反発を60本のローソク足へ再構成した教材用シナリオです。実際のOHLCをそのまま再現するものではありません。'
+    }
+  };
+  const HISTORICAL_ANCHORS = [
+    [0, 1.000], [4, 1.025], [8, .978], [11, .930], [15, 1.010], [18, .921], [20, .951],
+    [25, .780], [28, .873], [30, .794], [32, .722], [36, .755], [40, .835], [44, .760],
+    [48, .690], [52, .620], [56, .700], [59, .720]
+  ];
 
   const $ = (id) => document.getElementById(id);
   const els = {
     start: $('start-screen'), game: $('game-screen'), result: $('result-screen'),
-    startButton: $('start-button'), seedInput: $('seed-input'), seedDisplay: $('seed-display'),
-    timer: $('timer'), help: $('help-button'), dialog: $('guide-dialog'), paused: $('paused-label'),
+    startButton: $('start-button'), seedDisplay: $('seed-display'), scenarioLabel: $('scenario-label'),
+    timer: $('timer'), help: $('help-button'), dialog: $('guide-dialog'), paused: $('paused-label'), warning: $('market-warning'),
     chart: $('chart'), resultChart: $('result-chart'), currentPrice: $('current-price'),
     priceChange: $('price-change'), o: $('ohlc-open'), h: $('ohlc-high'), l: $('ohlc-low'), c: $('ohlc-close'),
     candleCount: $('candle-count'), totalAssets: $('total-assets'), totalReturn: $('total-return'),
     cash: $('cash'), stockValue: $('stock-value'), shares: $('shares'), unrealized: $('unrealized'),
     avgCost: $('avg-cost'), fees: $('fees'), cashBar: $('cash-bar'), stockBar: $('stock-bar'),
     buy: $('buy-button'), sell: $('sell-button'), sellAll: $('sell-all-button'), estimate: $('order-estimate'),
-    toast: $('toast'), replay: $('replay-button'), newSeed: $('new-seed-button'),
+    toast: $('toast'), replay: $('replay-button'), newSeed: $('new-seed-button'), capitalStatus: $('capital-status'),
+    assetSummary: document.querySelector('.asset-summary'), resultCaseNote: $('result-case-note'),
     buttonTip: $('button-tip'), tipTitle: $('tip-title'), tipText: $('tip-text'), tipClose: $('tip-close')
   };
 
-  let state = makeInitialState('CLASS-A');
+  let selectedScenarioId = 'A';
+  let state = makeInitialState('A');
   let timerId = null;
   let resizeFrame = null;
   let animationFrame = null;
   let lastUiPaint = 0;
   const seenTips = new Set();
 
-  function makeInitialState(seed) {
+  function makeInitialState(scenarioId) {
+    const scenario = SCENARIOS[scenarioId] || SCENARIOS.A;
     return {
-      seed, rng: mulberry32(hashSeed(seed)), running: false, paused: false,
+      scenarioId: scenario.id, seed: scenario.seed, rng: mulberry32(hashSeed(scenario.seed)), running: false, paused: false,
       elapsedTicks: 0, remainingMs: GAME_SECONDS * 1000, price: START_PRICE, displayPrice: START_PRICE,
       tweenFrom: START_PRICE, tweenTo: START_PRICE, tweenStarted: 0, pausedAt: 0, liveScale: null,
       cash: INITIAL_CASH, shares: 0, costBasis: 0, fees: 0, selectedLot: 100,
       candles: [], currentCandle: null, trades: [], assetHistory: [INITIAL_CASH],
-      peakAssets: INITIAL_CASH, maxDrawdown: 0, maxExposure: 0, regimes: [], regimeIndex: 0
+      peakAssets: INITIAL_CASH, maxDrawdown: 0, maxExposure: 0, regimes: [], regimeIndex: 0,
+      lastAlertCandle: -1
     };
   }
 
@@ -53,20 +92,26 @@
   }
 
   function buildRegimes() {
-    const templates = [
-      { name: '上昇', drift: .0010, volatility: .0027 }, { name: '横ばい', drift: 0, volatility: .0022 },
-      { name: '過熱', drift: .0019, volatility: .0042 }, { name: '調整', drift: -.0012, volatility: .0032 },
-      { name: '下落', drift: -.0017, volatility: .0042 }, { name: '反発', drift: .0015, volatility: .0048 }
-    ];
+    const templates = SCENARIOS[state.scenarioId].regimes || [];
     const list = [];
     let covered = 0;
-    while (covered < TOTAL_CANDLES) {
-      const source = templates[Math.floor(state.rng() * templates.length)];
-      const length = Math.min(TOTAL_CANDLES - covered, 6 + Math.floor(state.rng() * 9));
-      list.push({ ...source, start: covered, end: covered + length });
+    templates.forEach(([name, drift, volatility, requestedLength]) => {
+      const length = Math.min(TOTAL_CANDLES - covered, requestedLength);
+      if (length <= 0) return;
+      list.push({ name, drift, volatility, start: covered, end: covered + length });
       covered += length;
-    }
+    });
     state.regimes = list;
+  }
+
+  function historicalTarget(candleIndex) {
+    const index = Math.max(0, Math.min(TOTAL_CANDLES - 1, candleIndex));
+    let left = HISTORICAL_ANCHORS[0], right = HISTORICAL_ANCHORS[HISTORICAL_ANCHORS.length - 1];
+    for (let i = 1; i < HISTORICAL_ANCHORS.length; i++) {
+      if (index <= HISTORICAL_ANCHORS[i][0]) { left = HISTORICAL_ANCHORS[i - 1]; right = HISTORICAL_ANCHORS[i]; break; }
+    }
+    const progress = right[0] === left[0] ? 0 : (index - left[0]) / (right[0] - left[0]);
+    return Math.round(START_PRICE * (left[1] + (right[1] - left[1]) * progress));
   }
 
   function normalRandom() {
@@ -79,18 +124,35 @@
     return state.regimes[state.regimeIndex];
   }
 
-  function startGame(seedOverride) {
+  function normalizeScenario(value) {
+    const key = String(value || '').trim().toUpperCase();
+    if (SCENARIOS[key]) return key;
+    if (key === 'CLASS-A') return 'A'; if (key === 'CLASS-B') return 'B'; if (key === 'CLASS-C') return 'C';
+    if (key.includes('2008') || key.includes('LEHMAN')) return 'LEHMAN';
+    return selectedScenarioId;
+  }
+
+  function selectScenario(value) {
+    selectedScenarioId = normalizeScenario(value);
+    document.querySelectorAll('.scenario-card').forEach(button => {
+      const selected = button.dataset.scenario === selectedScenarioId;
+      button.classList.toggle('active', selected); button.setAttribute('aria-checked', String(selected));
+    });
+  }
+
+  function startGame(scenarioOverride) {
     clearInterval(timerId);
     cancelAnimationFrame(animationFrame);
     hideButtonTip();
-    const seed = String(seedOverride || els.seedInput.value || 'CLASS-A').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24) || 'CLASS-A';
-    els.seedInput.value = seed;
-    state = makeInitialState(seed);
-    buildRegimes();
+    clearTimeout(showMarketWarning.timeout); els.warning.classList.add('hidden');
+    const scenarioId = normalizeScenario(scenarioOverride || selectedScenarioId);
+    const scenario = SCENARIOS[scenarioId]; selectedScenarioId = scenarioId;
+    state = makeInitialState(scenarioId);
+    if (!scenario.historical) buildRegimes();
     state.running = true;
     startCandle();
     els.start.classList.add('hidden'); els.result.classList.add('hidden'); els.game.classList.remove('hidden');
-    els.seedDisplay.textContent = seed;
+    els.seedDisplay.textContent = scenario.badge; els.scenarioLabel.textContent = scenario.label;
     document.title = '取引中 — MARKET LAB';
     scheduleNextMove(performance.now());
     updateUI(); drawChart(els.chart, false);
@@ -105,11 +167,20 @@
 
   function scheduleNextMove(now) {
     const candleIndex = state.candles.length;
-    const regime = activeRegime(candleIndex);
-    let returnRate = regime.drift / TICKS_PER_CANDLE + normalRandom() * regime.volatility / Math.sqrt(TICKS_PER_CANDLE);
-    if (state.rng() < .0025) returnRate += (state.rng() - .58) * .025;
     state.tweenFrom = state.displayPrice;
-    state.price = Math.max(500, Math.round(state.price * (1 + returnRate)));
+    if (SCENARIOS[state.scenarioId].historical) {
+      const ticksIntoCandle = state.elapsedTicks % TICKS_PER_CANDLE;
+      const ticksRemaining = TICKS_PER_CANDLE - ticksIntoCandle;
+      const target = historicalTarget(candleIndex);
+      const directMove = (target - state.price) / ticksRemaining;
+      const noise = ticksRemaining === 1 ? 0 : normalRandom() * state.price * .0016;
+      state.price = Math.max(500, Math.round(ticksRemaining === 1 ? target : state.price + directMove + noise));
+    } else {
+      const regime = activeRegime(candleIndex);
+      let returnRate = regime.drift / TICKS_PER_CANDLE + normalRandom() * regime.volatility / Math.sqrt(TICKS_PER_CANDLE);
+      if (state.rng() < .0025) returnRate += (state.rng() - .58) * .025;
+      state.price = Math.max(500, Math.round(state.price * (1 + returnRate)));
+    }
     state.tweenTo = state.price;
     state.tweenStarted = now;
   }
@@ -124,6 +195,7 @@
     if (!state.running || state.paused) return;
     state.displayPrice = state.tweenTo;
     updateCurrentCandle(state.displayPrice);
+    checkMarketAlert();
     state.remainingMs = Math.max(0, state.remainingMs - TICK_MS);
     state.elapsedTicks++;
     const assets = totalAssets();
@@ -138,6 +210,21 @@
     }
     if (state.remainingMs <= 0 || state.candles.length >= TOTAL_CANDLES) return finishGame();
     scheduleNextMove(performance.now());
+  }
+
+  function checkMarketAlert() {
+    const candleIndex = state.candles.length; const cc = state.currentCandle;
+    if (!cc || state.lastAlertCandle === candleIndex) return;
+    const candleDrop = (marketPrice() - cc.open) / cc.open;
+    const stepDrop = (state.tweenTo - state.tweenFrom) / Math.max(1, state.tweenFrom);
+    if (candleDrop <= -.025 || stepDrop <= -.012) {
+      state.lastAlertCandle = candleIndex; showMarketWarning();
+    }
+  }
+
+  function showMarketWarning() {
+    clearTimeout(showMarketWarning.timeout); els.warning.classList.remove('hidden');
+    showMarketWarning.timeout = setTimeout(() => els.warning.classList.add('hidden'), 2100);
   }
 
   function renderLoop(now) {
@@ -197,6 +284,7 @@
   function finishGame() {
     if (!state.running) return;
     state.running = false; clearInterval(timerId); timerId = null; cancelAnimationFrame(animationFrame); animationFrame = null;
+    clearTimeout(showMarketWarning.timeout); els.warning.classList.add('hidden');
     if (state.currentCandle && state.candles.length < TOTAL_CANDLES) state.candles.push({ ...state.currentCandle });
     els.game.classList.add('hidden'); els.result.classList.remove('hidden');
     document.title = 'RESULT — MARKET LAB';
@@ -205,14 +293,17 @@
 
   function renderResult() {
     const assets = totalAssets(); const profit = assets - INITIAL_CASH; const rate = profit / INITIAL_CASH;
+    const scenario = SCENARIOS[state.scenarioId];
     const score = riskScore(rate, state.maxDrawdown, state.fees);
     setSigned($('final-return'), percent(rate));
-    $('final-assets').textContent = yen(assets); $('result-seed').textContent = state.seed;
+    $('final-assets').textContent = yen(assets); $('result-seed').textContent = scenario.badge;
     setSigned($('result-profit'), signedYen(profit));
     $('result-drawdown').textContent = `-${(state.maxDrawdown * 100).toFixed(2)}%`;
     $('result-exposure').textContent = percent(state.maxExposure, false);
     $('result-trades').textContent = `${state.trades.length}回`; $('result-fees').textContent = yen(state.fees); $('result-score').textContent = score;
     $('style-comment').innerHTML = investmentStyle(rate, state.maxExposure, state.trades.length, state.maxDrawdown);
+    els.resultCaseNote.textContent = scenario.note;
+    els.resultCaseNote.classList.toggle('historical', !!scenario.historical);
     requestAnimationFrame(() => drawChart(els.resultChart, true));
   }
 
@@ -231,18 +322,29 @@
 
   function updateUI() {
     const price = marketPrice(); const assets = totalAssets(); const stock = state.shares * price; const rate = (assets - INITIAL_CASH) / INITIAL_CASH;
+    const profit = assets - INITIAL_CASH;
     const marketRate = (price - START_PRICE) / START_PRICE; const avg = averageCost(); const unrealized = state.shares ? Math.round((price - avg) * state.shares) : 0;
     els.timer.textContent = formatTime(state.remainingMs); els.currentPrice.textContent = yen(price); setSigned(els.priceChange, percent(marketRate));
     const cc = state.currentCandle || { open: price, high: price, low: price, close: price };
     els.o.textContent = num(cc.open); els.h.textContent = num(cc.high); els.l.textContent = num(cc.low); els.c.textContent = num(cc.close);
     els.candleCount.textContent = `${Math.min(state.candles.length, TOTAL_CANDLES)} / ${TOTAL_CANDLES}`;
     els.totalAssets.textContent = yen(assets); setSigned(els.totalReturn, percent(rate)); els.cash.textContent = yen(state.cash); els.stockValue.textContent = yen(stock); els.shares.innerHTML = `${num(state.shares)} <small>株</small>`;
+    updateCapitalStatus(profit);
     setSigned(els.unrealized, signedYen(unrealized)); els.avgCost.textContent = state.shares ? yen(Math.round(avg)) : '—'; els.fees.textContent = yen(state.fees);
     const stockPct = assets ? Math.max(0, Math.min(100, stock / assets * 100)) : 0; els.cashBar.style.width = `${100-stockPct}%`; els.stockBar.style.width = `${stockPct}%`;
     const buyLot = resolveLot('buy'), sellLot = resolveLot('sell'); els.buy.disabled = !state.running || state.paused || buyLot <= 0 || buyLot * price + feeFor(buyLot * price) > state.cash;
     els.sell.disabled = !state.running || state.paused || sellLot <= 0 || sellLot > state.shares; els.sellAll.disabled = !state.running || state.paused || state.shares <= 0;
     const displayLot = state.selectedLot === 'max' ? buyLot : Number(state.selectedLot); const estimate = displayLot * price + feeFor(displayLot * price);
     els.estimate.textContent = displayLot > 0 ? `${num(displayLot)}株の購入額（手数料込） ${yen(estimate)}` : '購入できる数量がありません';
+  }
+
+  function updateCapitalStatus(profit) {
+    const status = profit > 0 ? 'up' : profit < 0 ? 'down' : 'even';
+    els.capitalStatus.className = `capital-status ${status}`;
+    els.assetSummary.classList.toggle('capital-up', status === 'up');
+    els.assetSummary.classList.toggle('capital-down', status === 'down');
+    const label = profit > 0 ? `元本を +${yen(profit)} 上回っています` : profit < 0 ? `元本を ${yen(Math.abs(profit))} 下回っています` : '元本と同額です';
+    els.capitalStatus.querySelector('strong').textContent = label;
   }
 
   function drawChart(canvas, withTrades) {
@@ -310,9 +412,8 @@
   function percent(value, signed=true) { return `${signed && value > 0 ? '+' : ''}${(value*100).toFixed(2)}%`; }
   function setSigned(el, text) { el.textContent = text; const raw = text.replace(/[¥,%]/g,''); const n = Number(raw); el.classList.remove('positive','negative','neutral'); el.classList.add(n>0?'positive':n<0?'negative':'neutral'); }
   function formatTime(ms) { const s = Math.ceil(ms/1000); return `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`; }
-  function randomSeed() { return `CLASS-${Math.random().toString(36).slice(2,7).toUpperCase()}`; }
-
   els.startButton.addEventListener('click', () => startGame());
+  document.querySelectorAll('.scenario-card').forEach(button => button.addEventListener('click', () => selectScenario(button.dataset.scenario)));
   document.querySelectorAll('[data-open-guide]').forEach(b => b.addEventListener('click', e => { e.preventDefault(); openGuide(); }));
   document.querySelectorAll('[data-close-guide]').forEach(b => b.addEventListener('click', closeGuide));
   els.help.addEventListener('click', openGuide);
@@ -322,21 +423,22 @@
   els.buy.addEventListener('click', () => buy()); els.sell.addEventListener('click', () => sell()); els.sellAll.addEventListener('click', () => sell(state.shares));
   document.querySelectorAll('[data-tip]').forEach(button => button.addEventListener('click', () => showButtonTip(button)));
   els.tipClose.addEventListener('click', hideButtonTip);
-  els.replay.addEventListener('click', () => startGame(state.seed));
-  els.newSeed.addEventListener('click', () => { els.result.classList.add('hidden'); els.start.classList.remove('hidden'); els.seedInput.value = randomSeed(); document.title = 'MARKET LAB — 投資シミュレーター'; window.scrollTo(0,0); });
+  els.replay.addEventListener('click', () => startGame(state.scenarioId));
+  els.newSeed.addEventListener('click', () => { els.result.classList.add('hidden'); els.start.classList.remove('hidden'); selectScenario(state.scenarioId); document.title = 'MARKET LAB — 投資シミュレーター'; window.scrollTo(0,0); });
   window.addEventListener('resize', () => { hideButtonTip(); cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(()=>{ if (!els.game.classList.contains('hidden')) drawChart(els.chart,false); if (!els.result.classList.contains('hidden')) drawChart(els.resultChart,true); }); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && state.running && !els.dialog.open) { setPaused(true); openGuide(); } });
 
   function registerWebMCP() {
     const context = document.modelContext; if (!context?.registerTool) return;
     const tools = [
-      { name:'read_market_state', title:'市場状況を確認', description:'現在価格、資産、保有株、残り時間を確認します。', inputSchema:{type:'object',properties:{},additionalProperties:false}, annotations:{readOnlyHint:true,untrustedContentHint:false}, execute:()=>({price:marketPrice(),cash:Math.round(state.cash),shares:state.shares,totalAssets:totalAssets(),remainingSeconds:Math.ceil(state.remainingMs/1000),running:state.running,paused:state.paused}) },
-      { name:'start_market_session', title:'取引を開始', description:'指定した共通SEEDで5分間の投資ゲームを開始します。', inputSchema:{type:'object',properties:{seed:{type:'string',minLength:1,maxLength:24}},required:['seed'],additionalProperties:false}, annotations:{readOnlyHint:false,untrustedContentHint:false}, execute:(input)=>{ if(!input || typeof input.seed!=='string') throw new Error('seed is required'); startGame(input.seed); return {started:true,seed:state.seed,durationSeconds:GAME_SECONDS}; } },
+      { name:'read_market_state', title:'市場状況を確認', description:'現在価格、資産、保有株、残り時間を確認します。', inputSchema:{type:'object',properties:{},additionalProperties:false}, annotations:{readOnlyHint:true,untrustedContentHint:false}, execute:()=>({scenario:state.scenarioId,price:marketPrice(),cash:Math.round(state.cash),shares:state.shares,totalAssets:totalAssets(),remainingSeconds:Math.ceil(state.remainingMs/1000),running:state.running,paused:state.paused}) },
+      { name:'start_market_session', title:'取引を開始', description:'選択したCASEで5分間の投資ゲームを開始します。', inputSchema:{type:'object',properties:{scenario:{type:'string',enum:['A','B','C','LEHMAN']}},required:['scenario'],additionalProperties:false}, annotations:{readOnlyHint:false,untrustedContentHint:false}, execute:(input)=>{ if(!input || !SCENARIOS[input.scenario]) throw new Error('valid scenario is required'); startGame(input.scenario); return {started:true,scenario:state.scenarioId,durationSeconds:GAME_SECONDS}; } },
       { name:'place_market_order', title:'売買注文', description:'進行中のゲームで100株単位の買いまたは売り注文を実行します。', inputSchema:{type:'object',properties:{side:{type:'string',enum:['buy','sell']},shares:{type:'integer',minimum:100,multipleOf:100}},required:['side','shares'],additionalProperties:false}, annotations:{readOnlyHint:false,untrustedContentHint:false}, execute:(input)=>{ if(!input || !['buy','sell'].includes(input.side) || !Number.isInteger(input.shares) || input.shares%100!==0) throw new Error('valid side and shares are required'); const result=input.side==='buy'?buy(input.shares):sell(input.shares); if(result.error) throw new Error(result.error); return result; } }
     ];
     tools.forEach(tool => { try { Promise.resolve(context.registerTool(tool)).catch(()=>{}); } catch (_) {} });
   }
 
-  const urlSeed = new URLSearchParams(location.search).get('seed'); if (urlSeed) els.seedInput.value = urlSeed.toUpperCase().slice(0,24);
+  const params = new URLSearchParams(location.search); const urlScenario = params.get('scenario') || params.get('seed');
+  if (urlScenario) selectScenario(urlScenario); else selectScenario('A');
   updateUI(); registerWebMCP();
 })();
