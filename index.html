@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f9fd">
+  <meta name="description" content="未来を知らない状態で投資判断を体験する、高校生向け投資シミュレーター。">
+  <title>MARKET LAB — 投資シミュレーター</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b63e8'/%3E%3Cpath d='M14 43V28M24 38V17M34 48V31M44 34V21M54 44V25' stroke='white' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css?v=0.2">
+</head>
+<body>
+  <main id="app">
+    <section id="start-screen" class="screen start-screen">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="MARKET LAB トップ">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>MARKET LAB</span>
+        </a>
+        <button class="ghost-button" data-open-guide="true">遊び方</button>
+      </header>
+
+      <div class="start-grid">
+        <section class="mission-card">
+          <p class="eyebrow">INVESTMENT SIMULATOR / RANDOM MARKET</p>
+          <h1>未来を知らずに、<br><span>5分間の投資判断。</span></h1>
+          <p class="lead">1,000万円を元手に、変化する市場で株式を売買します。終了時の総資産と、そこに至るまでのリスクを比べてみましょう。</p>
+
+          <div class="start-settings" aria-label="ゲーム設定">
+            <div class="setting-item">
+              <span>MODE</span>
+              <strong>RANDOM MARKET</strong>
+            </div>
+            <div class="setting-item seed-setting">
+              <label for="seed-input">共通SEED</label>
+              <input id="seed-input" type="text" value="CLASS-A" maxlength="24" autocomplete="off" spellcheck="false" aria-describedby="seed-note">
+              <small id="seed-note">同じSEEDなら全員が同じ相場になります</small>
+            </div>
+          </div>
+
+          <button id="start-button" class="primary-button">
+            <span>取引を開始する</span>
+            <span aria-hidden="true">→</span>
+          </button>
+          <p class="privacy-note"><span aria-hidden="true">●</span> 名前・結果・操作履歴は送信されません</p>
+        </section>
+
+        <aside class="briefing-panel" aria-label="ゲーム概要">
+          <div class="briefing-head">
+            <span>BEFORE YOU TRADE</span>
+            <span>01 — 03</span>
+          </div>
+          <article class="brief-card">
+            <span class="brief-number">01</span>
+            <div><h2>目的</h2><p>制限時間終了時の「現金＋保有株の評価額」を、開始時より増やします。</p></div>
+          </article>
+          <article class="brief-card">
+            <span class="brief-number">02</span>
+            <div><h2>操作</h2><p>数量を選び、買う・売るを押します。手数料は取引ごとに0.15%です。</p></div>
+          </article>
+          <article class="brief-card accent-card">
+            <span class="brief-number">03</span>
+            <div><h2>大切な視点</h2><p>大きな利益には、大きな損失の可能性も伴います。収益率だけでなくリスクにも注目してください。</p></div>
+          </article>
+          <button class="text-button" data-open-guide="true">ローソク足の見方を確認 <span>↗</span></button>
+        </aside>
+      </div>
+    </section>
+
+    <section id="game-screen" class="screen game-screen hidden" aria-label="取引画面">
+      <header class="game-header">
+        <div class="brand compact"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>MARKET LAB</span></div>
+        <div class="market-id"><span class="status-dot"></span><span>RANDOM MARKET</span><b id="seed-display">CLASS-A</b></div>
+        <div class="timer-wrap" aria-live="polite"><span>TIME LEFT</span><strong id="timer">05:00</strong></div>
+        <button id="help-button" class="circle-button" aria-label="ヘルプを開く">?</button>
+      </header>
+
+      <div class="market-layout">
+        <section class="chart-panel">
+          <div class="chart-head">
+            <div>
+              <span class="chart-label">MLAB / JPY</span>
+              <div class="price-line"><strong id="current-price">¥10,000</strong><span id="price-change" class="positive">+0.00%</span></div>
+            </div>
+            <div class="ohlc" aria-label="現在のローソク足情報">
+              <span>始 <b id="ohlc-open">10,000</b></span>
+              <span>高 <b id="ohlc-high">10,000</b></span>
+              <span>安 <b id="ohlc-low">10,000</b></span>
+              <span>終 <b id="ohlc-close">10,000</b></span>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="chart" aria-label="リアルタイムローソク足チャート"></canvas>
+            <div id="paused-label" class="paused-label hidden">PAUSED</div>
+          </div>
+          <div class="chart-footer"><span>1 CANDLE = 5 SEC</span><span id="candle-count">0 / 60</span></div>
+        </section>
+
+        <aside class="trade-panel">
+          <section class="asset-summary">
+            <div class="summary-top"><span>総資産</span><span id="total-return" class="positive">+0.00%</span></div>
+            <strong id="total-assets">¥10,000,000</strong>
+            <div class="asset-bars" aria-hidden="true"><i id="cash-bar"></i><i id="stock-bar"></i></div>
+            <div class="asset-breakdown">
+              <div><span>現金</span><b id="cash">¥10,000,000</b></div>
+              <div><span>保有株評価額</span><b id="stock-value">¥0</b></div>
+            </div>
+          </section>
+
+          <section class="position-card">
+            <div><span>保有株数</span><strong id="shares">0 <small>株</small></strong></div>
+            <div><span>評価損益</span><strong id="unrealized" class="neutral">¥0</strong></div>
+            <div><span>平均取得単価</span><strong id="avg-cost">—</strong></div>
+            <div><span>累計手数料</span><strong id="fees">¥0</strong></div>
+          </section>
+
+          <section class="order-card">
+            <div class="order-label"><span>注文数量</span><span>成行注文</span></div>
+            <div class="lot-selector" role="group" aria-label="注文数量">
+              <button class="lot active" data-lot="100" data-tip-title="注文数量：100株" data-tip="次の「買う」「売る」で100株を取引します。まずは小さく試したいときに向いています。">100</button>
+              <button class="lot" data-lot="500" data-tip-title="注文数量：500株" data-tip="次の「買う」「売る」で500株を取引します。価格が100円動くと、評価額は5万円動きます。">500</button>
+              <button class="lot" data-lot="1000" data-tip-title="注文数量：1,000株" data-tip="次の「買う」「売る」で1,000株を取引します。利益も損失も大きくなりやすい数量です。">1,000</button>
+              <button class="lot" data-lot="max" data-tip-title="注文数量：最大" data-tip="買う場合は手元の現金で購入できる最大数、売る場合は保有する全株が対象になります。">最大</button>
+            </div>
+            <div class="trade-buttons">
+              <button id="buy-button" class="trade-button buy" data-tip-title="株を買いました" data-tip="選択した数量を、表示中の価格で購入します。購入額とは別に0.15%の手数料がかかります。"><small>BUY</small><span>買う</span></button>
+              <button id="sell-button" class="trade-button sell" data-tip-title="株を売りました" data-tip="選択した数量を、表示中の価格で売却します。売却時にも0.15%の手数料がかかります。"><small>SELL</small><span>売る</span></button>
+            </div>
+            <button id="sell-all-button" class="sell-all" data-tip-title="全株を売却" data-tip="保有している株をすべて現在価格で売り、現金に戻します。選択中の注文数量には影響されません。">全株を売却</button>
+            <p id="order-estimate">100株の購入額（概算） ¥1,001,500</p>
+            <p class="tips-note"><span aria-hidden="true">?</span> 各操作を初めて押すと、短い説明が表示されます</p>
+          </section>
+        </aside>
+      </div>
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+      <div id="button-tip" class="button-tip hidden" role="status" aria-live="polite">
+        <button id="tip-close" type="button" aria-label="説明を閉じる">×</button>
+        <strong id="tip-title"></strong>
+        <p id="tip-text"></p>
+      </div>
+    </section>
+
+    <section id="result-screen" class="screen result-screen hidden">
+      <header class="topbar result-topbar">
+        <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>MARKET LAB</span></div>
+        <span class="result-seed">SEED <b id="result-seed">CLASS-A</b></span>
+      </header>
+      <div class="result-grid">
+        <section class="result-hero">
+          <p class="eyebrow">SESSION COMPLETE</p>
+          <h1>RESULT</h1>
+          <div class="final-return positive" id="final-return">+0.00%</div>
+          <div class="final-assets"><span>最終資産</span><strong id="final-assets">¥10,000,000</strong></div>
+          <p id="style-comment" class="style-comment">今回の売買行動を分析しています。</p>
+          <div class="result-actions">
+            <button id="replay-button" class="primary-button"><span>同じSEEDでもう一度</span><span>↻</span></button>
+            <button id="new-seed-button" class="ghost-button">新しい相場へ</button>
+          </div>
+        </section>
+        <section class="result-data">
+          <div class="metrics-grid">
+            <article><span>損益</span><strong id="result-profit">¥0</strong></article>
+            <article><span>最大ドローダウン</span><strong id="result-drawdown">0.00%</strong></article>
+            <article><span>最大投資比率</span><strong id="result-exposure">0.00%</strong></article>
+            <article><span>取引回数</span><strong id="result-trades">0回</strong></article>
+            <article><span>累計手数料</span><strong id="result-fees">¥0</strong></article>
+            <article class="score-metric"><span>リスク調整スコア</span><strong id="result-score">50</strong><small>/ 100</small></article>
+          </div>
+          <section class="review-chart">
+            <div class="review-head"><div><span>TRADE REVIEW</span><h2>売買地点の振り返り</h2></div><div class="legend"><span class="buy-legend">▲ BUY</span><span class="sell-legend">▼ SELL</span></div></div>
+            <div class="result-canvas-wrap"><canvas id="result-chart" aria-label="売買地点を表示したローソク足チャート"></canvas></div>
+            <p class="review-note">結果だけでなく、その時点で得られた情報から判断を振り返ってみましょう。</p>
+          </section>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="guide-dialog" class="guide-dialog">
+    <div class="dialog-head"><div><span class="eyebrow">QUICK GUIDE</span><h2>遊び方とローソク足</h2></div><button class="circle-button" data-close-guide="true" aria-label="閉じる">×</button></div>
+    <div class="guide-grid">
+      <article><span class="guide-icon">01</span><h3>資産を増やす</h3><p>5分間、現在価格で株を売買します。終了時には保有株もその時点の価格で評価されます。</p></article>
+      <article><span class="guide-icon">02</span><h3>数量を選ぶ</h3><p>100・500・1,000株、または買える最大数を選びます。「最大」は100株単位です。</p></article>
+      <article><span class="guide-icon">03</span><h3>リスクも見る</h3><p>総資産が最高値からどれだけ下がったかを「最大ドローダウン」として結果に表示します。</p></article>
+    </div>
+    <section class="candle-guide">
+      <div class="candle-figure" aria-hidden="true">
+        <div class="candle up"><i></i><b></b></div><div class="candle-labels"><span>高値</span><span>終値</span><span>始値</span><span>安値</span></div>
+        <div class="candle down"><i></i><b></b></div>
+      </div>
+      <div><h3>ローソク足の見方</h3><p>1本が5秒間の値動きです。太い部分は始値と終値、上下の細い「ヒゲ」はその間の高値と安値を示します。</p><div class="candle-key"><span><i class="up-color"></i>陽線：値上がり</span><span><i class="down-color"></i>陰線：値下がり</span></div></div>
+    </section>
+    <section class="point-box"><strong>POINT</strong><p>一度上がったから、その後も上がるとは限りません。全額を投じれば利益の可能性も損失の幅も大きくなります。売買ごとに0.15%の手数料がかかります。</p></section>
+    <button class="primary-button dialog-close-wide" data-close-guide="true"><span>理解して戻る</span><span>✓</span></button>
+  </dialog>
+
+  <script src="app.js?v=0.2"></script>
+</body>
+</html>
